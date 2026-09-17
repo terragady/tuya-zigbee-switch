@@ -354,3 +354,51 @@ def test_relay_cluster_startup_attr(
 
         assert device.zcl_relay_get(endpoint) == ("1" if after_state else "0")
         assert device.get_gpio("B0") == after_state
+
+
+def test_relay_cluster_startup_recheck_corrects_dropped_drive() -> None:
+    device_config = "A;B;RB0;"
+    endpoint = 1
+
+    with StubProc(device_config=device_config) as proc:
+        device = Device(proc)
+        device.write_zigbee_attr(
+            endpoint,
+            ZCL_CLUSTER_ON_OFF,
+            ZCL_ATTR_START_UP_ONOFF,
+            ZCL_START_UP_ONOFF_SET_ONOFF_TO_ON,
+        )
+
+    with StubProc(device_config=device_config) as proc:
+        device = Device(proc)
+        assert device.get_gpio("B0")
+
+        device.set_gpio("B0", 0)
+        assert not device.get_gpio("B0", refresh=True)
+
+        device.step_time(500)
+        assert device.get_gpio("B0", refresh=True)
+
+
+def test_relay_cluster_startup_recheck_does_not_override_real_command() -> None:
+    device_config = "A;B;RB0;"
+    endpoint = 1
+
+    with StubProc(device_config=device_config) as proc:
+        device = Device(proc)
+        device.write_zigbee_attr(
+            endpoint,
+            ZCL_CLUSTER_ON_OFF,
+            ZCL_ATTR_START_UP_ONOFF,
+            ZCL_START_UP_ONOFF_SET_ONOFF_TO_ON,
+        )
+
+    with StubProc(device_config=device_config) as proc:
+        device = Device(proc)
+        assert device.get_gpio("B0")
+
+        device.zcl_relay_off(endpoint)
+        assert not device.get_gpio("B0")
+
+        device.step_time(500)
+        assert not device.get_gpio("B0", refresh=True)

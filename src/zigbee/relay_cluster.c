@@ -33,6 +33,9 @@ void relay_cluster_on_write_attr(zigbee_relay_cluster *cluster,
 void relay_cluster_store_attrs_to_nv(zigbee_relay_cluster *cluster);
 void relay_cluster_load_attrs_from_nv(zigbee_relay_cluster *cluster);
 void relay_cluster_handle_startup_mode(zigbee_relay_cluster *cluster);
+void relay_cluster_startup_recheck(zigbee_relay_cluster *cluster);
+
+#define STARTUP_RECHECK_DELAY_MS    400
 
 void sync_indicator_led(zigbee_relay_cluster *cluster);
 
@@ -61,6 +64,9 @@ void relay_cluster_add_to_endpoint(zigbee_relay_cluster *cluster,
     cluster->relay->callback_param = cluster;
     cluster->relay->on_change      = (relay_callback_t)relay_cluster_on_relay_change;
 
+    cluster->startup_recheck_task.handler = (task_handler_t)relay_cluster_startup_recheck;
+    cluster->startup_recheck_task.arg     = cluster;
+    hal_tasks_init(&cluster->startup_recheck_task);
     relay_cluster_handle_startup_mode(cluster);
     sync_indicator_led(cluster);
 
@@ -204,6 +210,7 @@ void relay_cluster_on_relay_change(zigbee_relay_cluster *cluster,
         cluster->startup_mode == ZCL_START_UP_ONOFF_SET_ONOFF_TO_PREVIOUS) {
         relay_cluster_store_attrs_to_nv(cluster);
     }
+    hal_tasks_unschedule(&cluster->startup_recheck_task);
 }
 
 void relay_cluster_on_write_attr(zigbee_relay_cluster *cluster,
@@ -291,4 +298,15 @@ void relay_cluster_handle_startup_mode(zigbee_relay_cluster *cluster) {
 
     // Restore indicator LED state
     sync_indicator_led(cluster);
+
+    cluster->startup_target_on = cluster->relay->on;
+    hal_tasks_schedule(&cluster->startup_recheck_task, STARTUP_RECHECK_DELAY_MS);
+}
+
+void relay_cluster_startup_recheck(zigbee_relay_cluster *cluster) {
+    if (cluster->startup_target_on) {
+        relay_cluster_on(cluster);
+    } else {
+        relay_cluster_off(cluster);
+    }
 }
